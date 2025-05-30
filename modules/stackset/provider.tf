@@ -1,7 +1,5 @@
 
 
-provider "aws" {}
-
 provider "observe" {
   customer      = var.observe_customer_id
   domain        = var.observe_domain
