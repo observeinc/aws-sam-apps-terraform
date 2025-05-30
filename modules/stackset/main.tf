@@ -3,8 +3,11 @@ locals {
   # CloudFormation depends on having the AWSCloudFormationStackSetAdministrationRole in place
   # It can be created automatically with this module
   # However, if already in place - you can skip this step and provide the Role ARN directly
-  admin_iam_role_arn = var.enable_iam_module ?
-                        module.iam["enabled"].administration_role_arn : var.cf_admin_role_arn
+  admin_iam_role_arn = (
+    var.enable_iam_module
+    ? module.iam["enabled"].administration_role_arn
+    : var.cf_admin_role_arn
+  )
   enable_iam_module  = var.enable_iam_module ? { "enabled" = true } : {}
 
   #
