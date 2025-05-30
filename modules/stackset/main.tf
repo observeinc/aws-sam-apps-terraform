@@ -48,7 +48,7 @@ locals {
 # Create IAM Roles
 ####################################################################################################
 module "iam" {
-  source   = "./modules/iam"
+  source   = "../iam"
   for_each = local.enable_iam_module
 
   organization_root_id   = var.organization_root_id
