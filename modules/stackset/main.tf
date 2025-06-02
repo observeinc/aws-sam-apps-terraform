@@ -3,11 +3,18 @@ locals {
   # CloudFormation depends on having the AWSCloudFormationStackSetAdministrationRole in place
   # It can be created automatically with this module
   # However, if already in place - you can skip this step and provide the Role ARN directly
-  admin_iam_role_arn = (
+  stackset_admin_iam_role_arn = (
     var.enable_iam_module
     ? module.iam["enabled"].administration_role_arn
     : var.cf_admin_role_arn
   )
+
+  stackset_exec_iam_role_name = (
+    var.enable_iam_module
+    ? module.iam["enabled"].execution_role_name
+    : var.cf_exec_role_name
+  )
+
   enable_iam_module  = var.enable_iam_module ? { "enabled" = true } : {}
 
   #
@@ -116,7 +123,8 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
   name             = "observe-stackset-${each.key}"
   permission_model = "SELF_MANAGED"
 
-  administration_role_arn = local.admin_iam_role_arn
+  administration_role_arn = local.stackset_admin_iam_role_arn
+  execution_role_name = local.stackset_exec_iam_role_name
 
   template_body = data.http.observe_cf_templates[each.value.region].response_body
 

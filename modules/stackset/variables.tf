@@ -77,6 +77,12 @@ variable "cf_admin_role_arn" {
   default     = ""
 }
 
+variable "cf_exec_role_name" {
+  type        = string
+  description = "Name of Cloudformation StackSet execution role to use if IAM module is not enabled"
+  default     = ""
+}
+
 variable "stack_version" {
   type        = string
   description = "The version of the Observe Stack to use"
