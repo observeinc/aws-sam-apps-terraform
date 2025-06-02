@@ -41,7 +41,7 @@ resource "aws_cloudformation_stack_set_instance" "execution_role_instances" {
 #
 resource "aws_iam_role" "stackset_admin_role" {
   assume_role_policy = data.aws_iam_policy_document.stackset_admin_policy.json
-  name               = "AWSCloudFormationStackSetAdministrationRole"
+  name               = "ObserveStackSetAdministrationRole"
 }
 
 data "aws_iam_policy_document" "stackset_admin_policy" {

@@ -116,7 +116,6 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
   name             = "observe-stackset-${each.key}"
   permission_model = "SELF_MANAGED"
 
-  # administration_role_arn = "arn:aws:iam::${local.aws_management_account}:role/AWSCloudFormationStackSetAdministrationRole"
   administration_role_arn = local.admin_iam_role_arn
 
   template_body = data.http.observe_cf_templates[each.value.region].response_body
