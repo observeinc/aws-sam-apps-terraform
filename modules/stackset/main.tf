@@ -18,33 +18,27 @@ locals {
   enable_iam_module  = var.enable_iam_module ? { "enabled" = true } : {}
 
   #
-  # Main AWS Account/Region Map is defined in variables.tf
+  # Main AWS Account/Region Map is defined in a YAML config file
   #
+  config = yamldecode(file(var.config_file))
+
   # Remaining local variables are based on the mapping in variables.
   # This creates the same mapping in a way that is easy for Terraform to parse
-  #
-  # Flattened list of account + region pairs
+  
+  # Flatten the account-region pairs
   account_region_pairs = flatten([
-    for account, regions in var.aws_account_map : [
-      for region in regions : {
+    for account, regions in local.config.accounts : [
+      for region in keys(regions != null ? regions : {}) : {
         account = account
         region  = region
       }
     ]
   ])
+
   # Provides something Terraform can iterate over
   account_region_map = {
     for pair in local.account_region_pairs :
     "${pair.account}--${pair.region}" => pair
-  }
-
-  filtered_account_region_map = {
-    for pair in local.account_region_pairs :
-    "${pair.account}--${pair.region}" => pair
-    if !(
-      contains(keys(var.custom_aws_account_map), pair.account) &&
-      contains(lookup(var.custom_aws_account_map, pair.account, []), pair.region)
-    )
   }
 
   # Unique list of accounts
@@ -87,7 +81,7 @@ data "observe_datastream" "aws" {
 # - observe_filedrop.example.endpoint.0.s3.0.bucket
 # - observe_filedrop.example.endpoint.0.s3.0.prefix
 resource "observe_filedrop" "aws_filedrop" {
-  for_each   = local.filtered_account_region_map
+  for_each   = local.account_region_map
   workspace  = data.observe_workspace.observe_workspace.oid
   datastream = data.observe_datastream.aws.oid
   # The {each.key} is:  <account ID>--<region>
@@ -117,7 +111,7 @@ data "http" "observe_cf_templates" {
 
 resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
   depends_on = [module.iam]
-  for_each = local.filtered_account_region_map
+  for_each = local.account_region_map
 
   # This name MUST align with the role referenced in the FileDrop creation
   name             = "observeinc-${each.key}"
@@ -133,25 +127,44 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
     DestinationUri     = "s3://${observe_filedrop.aws_filedrop[each.key].endpoint[0].s3[0].bucket}/${observe_filedrop.aws_filedrop[each.key].endpoint[0].s3[0].prefix}"
     DataAccessPointArn = observe_filedrop.aws_filedrop[each.key].endpoint[0].s3[0].arn
 
-    # DISABLE AWS Config
-    # Handled by control tower, ingest handled separately.
-    ConfigDeliveryBucketName = ""
-    IncludeResourceTypes     = ""
-    ExcludeResourceTypes     = ""
+    ConfigDeliveryBucketName = lookup(
+      local.config.accounts[each.value.account][each.value.region], "ConfigDeliveryBucketName",
+      local.config.defaults.ConfigDeliveryBucketName
+    )
+    IncludeResourceTypes     = lookup(
+      local.config.accounts[each.value.account][each.value.region], "IncludeResourceTypes",
+      local.config.defaults.IncludeResourceTypes
+    )
+    ExcludeResourceTypes     = lookup(
+      local.config.accounts[each.value.account][each.value.region], "ExcludeResourceTypes",
+      local.config.defaults.ExcludeResourceTypes
+    )
 
     #
     # CloudWatch Logs
     # Comma separated lists
-    LogGroupNamePatterns        = "*"
-    LogGroupNamePrefixes        = ""
-    ExcludeLogGroupNamePatterns = ""
+    LogGroupNamePatterns        = lookup(
+      local.config.accounts[each.value.account][each.value.region], "LogGroupNamePatterns",
+      local.config.defaults.LogGroupNamePatterns
+    )
+    LogGroupNamePrefixes        = lookup(
+      local.config.accounts[each.value.account][each.value.region], "LogGroupNamePrefixes",
+      local.config.defaults.LogGroupNamePrefixes
+    )
+    ExcludeLogGroupNamePatterns = lookup(
+      local.config.accounts[each.value.account][each.value.region], "ExcludeLogGroupNamePatterns",
+      local.config.defaults.ExcludeLogGroupNamePatterns
+    )
 
 
     DebugEndpoint = ""
     #
     # CloudWatch Metrics
     #
-    MetricStreamFilterUri = "s3://observeinc/cloudwatchmetrics/filters/recommended.yaml"
+    MetricStreamFilterUri = lookup(
+      local.config.accounts[each.value.account][each.value.region], "MetricStreamFilterUri",
+      local.config.defaults.MetricStreamFilterUri
+    )
     ObserveAccountID      = ""
     ObserveDomainName     = ""
     DatasourceID          = ""
@@ -160,6 +173,7 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
 
     # Enable Observe Metrics Poller
     MetricsPollerAllowedActions = "cloudwatch:GetMetricData,cloudwatch:ListMetrics,tag:GetResources"
+    # ObserveAwsAccountId         = "802757454165"
     ObserveAwsAccountId         = ""
     DatastreamIds               = ""
 
@@ -167,7 +181,10 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
     # Forwarder Options
     #
     # Comma separated list
-    SourceBucketNames    = ""
+    SourceBucketNames    = lookup(
+      local.config.accounts[each.value.account][each.value.region], "SourceBucketNames",
+      local.config.defaults.SourceBucketNames
+    )
     ContentTypeOverrides = ""
     NameOverride         = "observeinc-${each.key}-forwarder"
   }
@@ -180,11 +197,12 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
 
 resource "aws_cloudformation_stack_set_instance" "observe_aws_stackset_instance" {
   depends_on = [module.iam]
-  for_each       = local.filtered_account_region_map
+  for_each       = local.account_region_map
   account_id     = each.value.account
   region         = each.value.region
   stack_set_name = aws_cloudformation_stack_set.observe_aws_stackset["${each.key}"].name
   call_as        = "SELF"
+  retain_stack   = false
 
 }
 

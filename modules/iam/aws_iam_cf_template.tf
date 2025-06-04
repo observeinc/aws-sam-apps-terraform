@@ -73,11 +73,15 @@ Resources:
                   - lambda:RemovePermission
                   - lambda:ListFunctions
                   - lambda:TagResource
+                Resource:
+                  - "arn:aws:lambda:*:*:*"
+              - Effect: Allow
+                Action:
                   - lambda:CreateEventSourceMapping
                   - lambda:DeleteEventSourceMapping
                   - lambda:GetEventSourceMapping
                 Resource:
-                  - "arn:aws:lambda:*:*:*"
+                  - "*"
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
