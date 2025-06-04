@@ -15,10 +15,7 @@ module "observe_aws" {
 
   organization_root_id   = "r-itll"
   aws_management_account = "238576302167"
-  aws_account_map = {
-    "238576302167" = ["us-east-1", "us-east-2"]
-    "499691775255" = ["us-east-1", "eu-central-1"]
-  }
+  config_file            = "./config.yaml"
 
   stack_version          = "2.7.0"
   enable_iam_module      = true
@@ -27,4 +24,31 @@ module "observe_aws" {
   # cf_admin_role_arn     = ""
   # cf_exec_role_name     = ""
 }
+```
+
+
+# Example Config:
+
+```
+
+
+defaults:
+  ConfigDeliveryBucketName: ""
+  IncludeResourceTypes: ""
+  ExcludeResourceTypes: ""
+  LogGroupNamePatterns: "*"
+  LogGroupNamePrefixes: ""
+  ExcludeLogGroupNamePatterns: ""
+  MetricStreamFilterUri: "s3://observeinc/cloudwatchmetrics/filters/recommended.yaml"
+  SourceBucketNames: ""
+
+
+accounts:
+  238576302167:
+    us-east-1:
+      LogGroupNamePatterns: "prod"
+    us-east-2: {}
+  499691775255:
+    us-east-1: {}
+    eu-central-1: {}
 ```
