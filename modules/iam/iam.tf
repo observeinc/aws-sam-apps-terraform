@@ -62,7 +62,7 @@ resource "aws_iam_role_policy" "stackset_admin_role_policy" {
 
 
 #
-# CREATE EXECUTION ROLE IN MANAGEMENT ACCOUNT (238576302167)
+# CREATE EXECUTION ROLE IN MANAGEMENT ACCOUNT
 #
 data "aws_iam_policy_document" "stackset_exe_trust_policy" {
   statement {
@@ -83,7 +83,7 @@ data "aws_iam_policy_document" "stackset_admin_permission_policy" {
 }
 resource "aws_iam_role" "stackset_exe_role" {
   assume_role_policy = data.aws_iam_policy_document.stackset_exe_trust_policy.json
-  name               = "AWSCloudFormationStackSetExecutionRole"
+  name               = "ObserveStackSetExecutionRole"
 }
 resource "aws_iam_role_policy" "stackset_exe_role_policy" {
   policy = data.aws_iam_policy_document.stackset_admin_permission_policy.json

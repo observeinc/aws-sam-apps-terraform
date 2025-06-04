@@ -91,7 +91,7 @@ resource "observe_filedrop" "aws_filedrop" {
   workspace  = data.observe_workspace.observe_workspace.oid
   datastream = data.observe_datastream.aws.oid
   # The {each.key} is:  <account ID>--<region>
-  name = "observe-stackset-${each.key}-forwarder-filedrop"
+  name = "observeinc-${each.key}-forwarder-filedrop"
   config {
     provider {
       aws {
@@ -99,7 +99,7 @@ resource "observe_filedrop" "aws_filedrop" {
         region = "us-west-2"
         # This Role reference allows customers to send data to Observe's hosted S3 bucket (FileDrop)
         # It MUST match what is created in the Observe Integration Stack (which is based on the Stack name)
-        role_arn = "arn:aws:iam::${each.value.account}:role/observe-stackset-${each.key}-forwarder-filedrop"
+        role_arn = "arn:aws:iam::${each.value.account}:role/observeinc-${each.key}-forwarder-filedrop"
       }
     }
   }
@@ -120,7 +120,7 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
   for_each = local.filtered_account_region_map
 
   # This name MUST align with the role referenced in the FileDrop creation
-  name             = "observe-stackset-${each.key}"
+  name             = "observeinc-${each.key}"
   permission_model = "SELF_MANAGED"
 
   administration_role_arn = local.stackset_admin_iam_role_arn
@@ -169,7 +169,7 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
     # Comma separated list
     SourceBucketNames    = ""
     ContentTypeOverrides = ""
-    NameOverride         = "observe-stackset-${each.key}-forwarder"
+    NameOverride         = "observeinc-${each.key}-forwarder"
   }
 
   capabilities = [
