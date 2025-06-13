@@ -74,3 +74,9 @@ variable "stack_version" {
   description = "The version of the Observe Stack to use"
   default     = "2.7.0"
 }
+
+variable "observe_aws_account" {
+  type        = string
+  description = "The Observe AWS Account ID where the Metrics Poller is hosted"
+  default     = "802757454165"
+}

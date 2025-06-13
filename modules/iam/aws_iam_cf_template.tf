@@ -1,5 +1,4 @@
 locals {
-  stack_version = "2.7.0"
   iam_stackset_template_body = <<EOF
 Resources:
   StackSetExecutionRole:

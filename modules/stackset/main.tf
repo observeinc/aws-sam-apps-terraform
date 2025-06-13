@@ -1,3 +1,23 @@
+####################################################################################################
+#
+#   DEVELOPMENT DOCUMENTATION
+#
+#   Overview:
+#      * Local Variables used for various purposes - all based on Config File & Variables provided.
+#      * IAM Module invocation if enabled
+#      * Observe FileDrop creation
+#      * Cloudformation StackSet & StackSet Instance creation
+#      * Observe Metrics Poller creation if configured
+#
+#   Notes:
+#      * Name is fixed, not configurable.  In part because of dependencies between the name/role
+#        between the CF stack, filedrop, and metrics poller.
+#        The name is 'observeinc-<account>-<region>' (plus -filedrop/-metrics-poller respectively)
+#      * Same with IAM names created (if not provided b/c IAM is disabled)
+####################################################################################################
+
+
+
 
 locals {
   # CloudFormation depends on having the AWSCloudFormationStackSetAdministrationRole in place
@@ -15,7 +35,7 @@ locals {
     : var.cf_exec_role_name
   )
 
-  enable_iam_module  = var.enable_iam_module ? { "enabled" = true } : {}
+  enable_iam_module = var.enable_iam_module ? { "enabled" = true } : {}
 
   #
   # Main AWS Account/Region Map is defined in a YAML config file
@@ -24,7 +44,7 @@ locals {
 
   # Remaining local variables are based on the mapping in variables.
   # This creates the same mapping in a way that is easy for Terraform to parse
-  
+
   # Flatten the account-region pairs
   account_region_pairs = flatten([
     for account, regions in local.config.accounts : [
@@ -39,6 +59,13 @@ locals {
   account_region_map = {
     for pair in local.account_region_pairs :
     "${pair.account}--${pair.region}" => pair
+  }
+
+  # Which accounts/regions to deploy the metrics poller to
+  account_region_map_with_metrics_poller = {
+    for key, pair in local.account_region_map :
+    key => pair
+    if lookup(local.config.accounts[pair.account][pair.region], "MetricsMode", null) == "poller"
   }
 
   # Unique list of accounts
@@ -85,7 +112,7 @@ resource "observe_filedrop" "aws_filedrop" {
   workspace  = data.observe_workspace.observe_workspace.oid
   datastream = data.observe_datastream.aws.oid
   # The {each.key} is:  <account ID>--<region>
-  name = "observeinc-${each.key}-forwarder-filedrop"
+  name = "observeinc-${each.key}-filedrop"
   config {
     provider {
       aws {
@@ -93,7 +120,7 @@ resource "observe_filedrop" "aws_filedrop" {
         region = "us-west-2"
         # This Role reference allows customers to send data to Observe's hosted S3 bucket (FileDrop)
         # It MUST match what is created in the Observe Integration Stack (which is based on the Stack name)
-        role_arn = "arn:aws:iam::${each.value.account}:role/observeinc-${each.key}-forwarder-filedrop"
+        role_arn = "arn:aws:iam::${each.value.account}:role/observeinc-${each.key}-filedrop"
       }
     }
   }
@@ -111,18 +138,20 @@ data "http" "observe_cf_templates" {
 
 resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
   depends_on = [module.iam]
-  for_each = local.account_region_map
+  for_each   = local.account_region_map
 
   # This name MUST align with the role referenced in the FileDrop creation
   name             = "observeinc-${each.key}"
   permission_model = "SELF_MANAGED"
 
   administration_role_arn = local.stackset_admin_iam_role_arn
-  execution_role_name = local.stackset_exec_iam_role_name
+  execution_role_name     = local.stackset_exec_iam_role_name
 
   template_body = data.http.observe_cf_templates[each.value.region].response_body
 
   parameters = {
+    # Must be the same as the stack name above
+    NameOverride     = "observeinc-${each.key}"
     # Destination parameters
     DestinationUri     = "s3://${observe_filedrop.aws_filedrop[each.key].endpoint[0].s3[0].bucket}/${observe_filedrop.aws_filedrop[each.key].endpoint[0].s3[0].prefix}"
     DataAccessPointArn = observe_filedrop.aws_filedrop[each.key].endpoint[0].s3[0].arn
@@ -131,11 +160,11 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
       local.config.accounts[each.value.account][each.value.region], "ConfigDeliveryBucketName",
       local.config.defaults.ConfigDeliveryBucketName
     )
-    IncludeResourceTypes     = lookup(
+    IncludeResourceTypes = lookup(
       local.config.accounts[each.value.account][each.value.region], "IncludeResourceTypes",
       local.config.defaults.IncludeResourceTypes
     )
-    ExcludeResourceTypes     = lookup(
+    ExcludeResourceTypes = lookup(
       local.config.accounts[each.value.account][each.value.region], "ExcludeResourceTypes",
       local.config.defaults.ExcludeResourceTypes
     )
@@ -143,11 +172,11 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
     #
     # CloudWatch Logs
     # Comma separated lists
-    LogGroupNamePatterns        = lookup(
+    LogGroupNamePatterns = lookup(
       local.config.accounts[each.value.account][each.value.region], "LogGroupNamePatterns",
       local.config.defaults.LogGroupNamePatterns
     )
-    LogGroupNamePrefixes        = lookup(
+    LogGroupNamePrefixes = lookup(
       local.config.accounts[each.value.account][each.value.region], "LogGroupNamePrefixes",
       local.config.defaults.LogGroupNamePrefixes
     )
@@ -161,32 +190,34 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
     #
     # CloudWatch Metrics
     #
-    MetricStreamFilterUri = lookup(
-      local.config.accounts[each.value.account][each.value.region], "MetricStreamFilterUri",
-      local.config.defaults.MetricStreamFilterUri
-    )
-    ObserveAccountID      = ""
-    ObserveDomainName     = ""
-    DatasourceID          = ""
-    GQLToken              = "****"
-    UpdateTimestamp       = ""
+    MetricStreamFilterUri = (
+      (contains(keys(local.account_region_map_with_metrics_poller), each.key) ||
+      lookup(local.config.accounts[each.value.account][each.value.region], "MetricsMode", null) == "none")
+      ? ""
+      : lookup(
+        local.config.accounts[each.value.account][each.value.region], "MetricStreamFilterUri",
+        local.config.defaults.MetricStreamFilterUri
+    ))
+    ObserveAccountID  = ""
+    ObserveDomainName = ""
+    DatasourceID      = ""
+    GQLToken          = "****"
+    UpdateTimestamp   = ""
 
     # Enable Observe Metrics Poller
     MetricsPollerAllowedActions = "cloudwatch:GetMetricData,cloudwatch:ListMetrics,tag:GetResources"
-    # ObserveAwsAccountId         = "802757454165"
-    ObserveAwsAccountId         = ""
-    DatastreamIds               = ""
+    ObserveAwsAccountId         = contains(keys(local.account_region_map_with_metrics_poller), each.key) ? var.observe_aws_account : ""
+    DatastreamIds               = contains(keys(local.account_region_map_with_metrics_poller), each.key) ? data.observe_datastream.aws.id : ""
 
     #
     # Forwarder Options
     #
     # Comma separated list
-    SourceBucketNames    = lookup(
+    SourceBucketNames = lookup(
       local.config.accounts[each.value.account][each.value.region], "SourceBucketNames",
       local.config.defaults.SourceBucketNames
     )
     ContentTypeOverrides = ""
-    NameOverride         = "observeinc-${each.key}-forwarder"
   }
 
   capabilities = [
@@ -196,7 +227,7 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
 }
 
 resource "aws_cloudformation_stack_set_instance" "observe_aws_stackset_instance" {
-  depends_on = [module.iam]
+  depends_on     = [module.iam]
   for_each       = local.account_region_map
   account_id     = each.value.account
   region         = each.value.region
@@ -207,4 +238,40 @@ resource "aws_cloudformation_stack_set_instance" "observe_aws_stackset_instance"
 }
 
 
+####################################################################################################
+# CREATE OBSERVE METRICS POLLER (if configured)
+####################################################################################################
+resource "observe_poller" "observe_metrics_poller" {
+  for_each   = local.account_region_map_with_metrics_poller
+  depends_on = [aws_cloudformation_stack_set_instance.observe_aws_stackset_instance]
 
+  workspace  = data.observe_workspace.observe_workspace.oid
+  datastream = data.observe_datastream.aws.oid
+  name       = "poller-${var.observe_customer_id}--${each.key}"
+
+  interval = lookup(
+    local.config.accounts[each.value.account][each.value.region], "MetricsPollerInterval",
+    local.config.defaults.MetricsPollerInterval
+  )
+
+  cloudwatch_metrics {
+    region          = each.value.region
+    assume_role_arn = "arn:aws:iam::${each.value.account}:role/observeinc-${each.key}-metrics-poller"
+
+    query {
+      namespace = "AWS/EC2"
+      # resource_filter {
+      #   tag_filter {
+      #     key    = "Observe"
+      #     values = ["true"]
+      #   }
+      # }
+    }
+  }
+}
+
+# dynamic "cloudwatch_logs" {
+# for_each = each.value.prefixes
+# content {
+#   prefix = cloudwatch_logs.value
+# }
