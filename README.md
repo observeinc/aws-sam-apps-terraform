@@ -32,6 +32,7 @@ module "observe_aws" {
 ```
 
 
+
 defaults:
   ConfigDeliveryBucketName: ""
   IncludeResourceTypes: ""
@@ -40,6 +41,13 @@ defaults:
   LogGroupNamePrefixes: ""
   ExcludeLogGroupNamePatterns: ""
   MetricStreamFilterUri: "s3://observeinc/cloudwatchmetrics/filters/recommended.yaml"
+  MetricsPollerInterval: "5m"
+  MetricNamespaces:
+    - AWS/Firehose
+  # MetricFilters:
+  #   AWS/Firehose:
+  #     MetricNames:
+  #       - BytesPerSecondLimit
   SourceBucketNames: ""
 
 
@@ -47,6 +55,24 @@ accounts:
   238576302167:
     us-east-1:
       LogGroupNamePatterns: "prod"
+      MetricsMode: "none"
+      MetricsPollerInterval: "2m"
+      MetricNamespaces:
+        # - AWS/EC2
+        - AWS/Firehose
+        # - AWS/S3
+      MetricFilters:
+        AWS/Firehose:
+          # MetricNames:
+          #   - BytesPerSecondLimit
+          #   - PutRequestsPerSecondLimit
+          #   - RecordsPerSecondLimit
+          Dimensions:
+            - Key: DeliveryStreamName
+              Value: observeinc-238576302167--us-east-1-LogWriter
+          Tags:
+            - Key: lambda:createdBy
+              Values: [SAM]
     us-east-2: {}
   499691775255:
     us-east-1: {}

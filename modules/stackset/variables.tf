@@ -76,7 +76,10 @@ variable "stack_version" {
 }
 
 variable "observe_aws_account" {
-  type        = string
+  type        = map(string)
   description = "The Observe AWS Account ID where the Metrics Poller is hosted"
-  default     = "802757454165"
+  default     = {
+    "observe-staging.com": "802757454165",
+    "observeinc.com": "158067661102"
+  }
 }

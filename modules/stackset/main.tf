@@ -16,9 +16,6 @@
 #      * Same with IAM names created (if not provided b/c IAM is disabled)
 ####################################################################################################
 
-
-
-
 locals {
   # CloudFormation depends on having the AWSCloudFormationStackSetAdministrationRole in place
   # It can be created automatically with this module
@@ -48,7 +45,7 @@ locals {
   # Flatten the account-region pairs
   account_region_pairs = flatten([
     for account, regions in local.config.accounts : [
-      for region in keys(regions != null ? regions : {}) : {
+      for region in keys(regions) : {
         account = account
         region  = region
       }
@@ -65,7 +62,7 @@ locals {
   account_region_map_with_metrics_poller = {
     for key, pair in local.account_region_map :
     key => pair
-    if lookup(local.config.accounts[pair.account][pair.region], "MetricsMode", null) == "poller"
+    if lower(lookup(local.config.accounts[pair.account][pair.region], "MetricsMode", "")) == "poller"
   }
 
   # Unique list of accounts
@@ -192,7 +189,7 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
     #
     MetricStreamFilterUri = (
       (contains(keys(local.account_region_map_with_metrics_poller), each.key) ||
-      lookup(local.config.accounts[each.value.account][each.value.region], "MetricsMode", null) == "none")
+      lower(lookup(local.config.accounts[each.value.account][each.value.region], "MetricsMode", "") == "none")
       ? ""
       : lookup(
         local.config.accounts[each.value.account][each.value.region], "MetricStreamFilterUri",
@@ -206,7 +203,7 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
 
     # Enable Observe Metrics Poller
     MetricsPollerAllowedActions = "cloudwatch:GetMetricData,cloudwatch:ListMetrics,tag:GetResources"
-    ObserveAwsAccountId         = contains(keys(local.account_region_map_with_metrics_poller), each.key) ? var.observe_aws_account : ""
+    ObserveAwsAccountId         = contains(keys(local.account_region_map_with_metrics_poller), each.key) ? var.observe_aws_account[var.observe_domain] : ""
     DatastreamIds               = contains(keys(local.account_region_map_with_metrics_poller), each.key) ? data.observe_datastream.aws.id : ""
 
     #
@@ -251,27 +248,94 @@ resource "observe_poller" "observe_metrics_poller" {
 
   interval = lookup(
     local.config.accounts[each.value.account][each.value.region], "MetricsPollerInterval",
-    local.config.defaults.MetricsPollerInterval
+    lookup(local.config.defaults, "MetricsPollerInterval", local.metricspoller_default_interval)
   )
 
   cloudwatch_metrics {
     region          = each.value.region
     assume_role_arn = "arn:aws:iam::${each.value.account}:role/observeinc-${each.key}-metrics-poller"
 
-    query {
-      namespace = "AWS/EC2"
-      # resource_filter {
-      #   tag_filter {
-      #     key    = "Observe"
-      #     values = ["true"]
-      #   }
-      # }
+    dynamic "query" {
+      # Check for region/account specific configuration
+      # Then check for User Default configuration
+      # Otherwise check for module defaults
+      for_each = lookup(
+        local.config.accounts[each.value.account][each.value.region], "MetricNamespaces",
+        try(local.config.defaults.MetricNamespaces, keys(local.metricspoller_default_filters))
+      )
+
+      content {
+        namespace = query.value
+        # Check for region/account specific configuration
+        # Then check for User Default configuration
+        # Otherwise check for module defaults - but only if there are no user defaults configured
+        # If a user configures a namespace but no default filters, then use blank for 'all'
+        metric_names = lookup(
+          lookup(
+            lookup(
+              local.config.accounts[each.value.account][each.value.region],
+              "MetricFilters", {}
+            ), query.value, {}),
+          # account/region specific filters
+          "MetricNames",
+          # Else
+          lookup(
+            lookup(try(local.config.defaults.MetricFilters, {}), query.value, {}),
+            # User default filters
+            "MetricNames",
+            !contains(try(local.config.defaults.MetricNamespaces, []), query.value) ?
+            # Module default filters (if not overriden in user defaults)
+            lookup(local.metricspoller_default_filters, query.value, null) : null)
+        )
+
+        dynamic "dimension" {
+          for_each = lookup(
+            lookup(
+              lookup(
+                local.config.accounts[each.value.account][each.value.region],
+                "MetricFilters", {}
+              ), query.value, {}),
+            "Dimensions", []
+          )
+
+          content {
+             name = dimension.value.Key
+             value = dimension.value.Value
+          }
+        }
+
+        dynamic "resource_filter" {
+          for_each = ((length(lookup(
+            lookup(
+              lookup(
+                local.config.accounts[each.value.account][each.value.region],
+                "MetricFilters", {}
+              ), query.value, {}),
+            "Tags", []
+          ))) > 0) ? [1] : []
+
+          content {
+
+             dynamic "tag_filter" {
+                for_each = lookup(
+                  lookup(
+                    lookup(
+                      local.config.accounts[each.value.account][each.value.region],
+                      "MetricFilters", {}
+                    ), query.value, {}),
+                  "Tags", []
+                )
+
+                content {
+                    key = tag_filter.value.Key
+                    values = tag_filter.value.Values
+                }
+             }
+          }
+        }
+
+      }
     }
+
   }
 }
-
-# dynamic "cloudwatch_logs" {
-# for_each = each.value.prefixes
-# content {
-#   prefix = cloudwatch_logs.value
-# }
