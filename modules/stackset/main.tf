@@ -194,7 +194,7 @@ resource "aws_cloudformation_stack_set" "observe_aws_stackset" {
       : lookup(
         local.config.accounts[each.value.account][each.value.region], "MetricStreamFilterUri",
         local.config.defaults.MetricStreamFilterUri
-    ))
+    )))
     ObserveAccountID  = ""
     ObserveDomainName = ""
     DatasourceID      = ""
