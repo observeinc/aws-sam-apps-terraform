@@ -72,7 +72,7 @@ variable "cf_exec_role_name" {
 variable "stack_version" {
   type        = string
   description = "The version of the Observe Stack to use"
-  default     = "2.7.0"
+  default     = "2.17.2"
 }
 
 variable "observe_aws_account" {

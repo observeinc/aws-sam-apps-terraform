@@ -17,7 +17,7 @@ module "observe_aws" {
   aws_management_account = "238576302167"
   config_file            = "./config.yaml"
 
-  stack_version          = "2.7.0"
+  stack_version          = "2.17.2"
   enable_iam_module      = true
 
   # enable_iam_module     = false
